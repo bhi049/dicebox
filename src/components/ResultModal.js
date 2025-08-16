@@ -1,3 +1,4 @@
+// src/components/ResultModal.js
 import React, { useEffect, useRef } from "react";
 import { Modal, View, Text, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { useTheme } from "../theme/theme";
@@ -12,7 +13,6 @@ function StatPill({ label, value }) {
   );
 }
 
-// simple bar (0–100)
 function Bar({ label, pct }) {
   const clamped = Math.max(0, Math.min(100, pct || 0));
   return (
@@ -29,11 +29,12 @@ function Bar({ label, pct }) {
 export default function ResultModal({
   visible,
   type,               // 'win' | 'loss'
-  rollsUsed,          // number
-  leftoverSum,        // number | null
-  stats,              // latest stats object
+  perfect = false,    // NEW: true only when no skips used
+  rollsUsed,
+  leftoverSum,
+  stats,
   onPlayAgain,
-  onClose,            // (optional) close to home
+  onClose,
 }) {
   const t = useTheme();
   const scale = useRef(new Animated.Value(0.9)).current;
@@ -56,21 +57,24 @@ export default function ResultModal({
   const winRate = stats?.gamesPlayed ? Math.round((stats.wins / stats.gamesPlayed) * 100) : 0;
   const avgLeft = stats?.lossCount ? (stats.totalLeftoverSum / stats.lossCount) : null;
 
+  const title = type === "win" ? (perfect ? "Perfect Shut!" : "You Win!") : "Game Over";
+  const emoji = type === "win" ? (perfect ? "🎉" : "✅") : "🎲";
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-
         <Animated.View
           style={[
             styles.card,
             { backgroundColor: t.card, borderRadius: t.radius, transform: [{ scale }], opacity },
           ]}
         >
-          <Text style={styles.resultEmoji}>{type === "win" ? "🎉" : "🎲"}</Text>
-          <Text style={styles.title}>{type === "win" ? "Perfect Shut!" : "Game Over"}</Text>
+          <Text style={styles.resultEmoji}>{emoji}</Text>
+          <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>
-            {type === "win" ? `You cleared all numbers in ${rollsUsed} roll${rollsUsed === 1 ? "" : "s"}.`
-                            : `No moves left. Leftover total: ${leftoverSum}`}
+            {type === "win"
+              ? `Cleared all numbers in ${rollsUsed} roll${rollsUsed === 1 ? "" : "s"}.${perfect ? "" : " (Used skips)"}`
+              : `No moves left. Leftover total: ${leftoverSum}`}
           </Text>
 
           {/* Quick stat pills */}
@@ -81,7 +85,7 @@ export default function ResultModal({
             <StatPill label="Best" value={stats?.bestStreak ?? 0} />
           </View>
 
-          {/* Bars (satisfying visual) */}
+          {/* Bars */}
           <View style={styles.bars}>
             <Bar label="Win Rate" pct={winRate} />
             <Bar label="Perfect Shuts" pct={stats?.gamesPlayed ? Math.round((stats.perfectShuts / stats.gamesPlayed) * 100) : 0} />
@@ -89,12 +93,8 @@ export default function ResultModal({
 
           {/* Footnote numbers */}
           <View style={styles.footRow}>
-            <Text style={styles.footText}>
-              Fewest Rolls (Win): {stats?.bestFewestRolls ?? "-"}
-            </Text>
-            <Text style={styles.footText}>
-              Avg Leftover (Loss): {avgLeft != null ? avgLeft.toFixed(1) : "-"}
-            </Text>
+            <Text style={styles.footText}>Fewest Rolls (Win): {stats?.bestFewestRolls ?? "-"}</Text>
+            <Text style={styles.footText}>Avg Leftover (Loss): {avgLeft != null ? avgLeft.toFixed(1) : "-"}</Text>
           </View>
 
           {/* Actions */}
@@ -103,39 +103,28 @@ export default function ResultModal({
             <Text style={styles.secondary}>Back to Home</Text>
           </TouchableOpacity>
         </Animated.View>
-
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.25)",
-    alignItems: "center", justifyContent: "center", padding: 20,
-  },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)", alignItems: "center", justifyContent: "center", padding: 20 },
   card: { width: "100%", maxWidth: 420, padding: 18, alignItems: "center" },
   resultEmoji: { fontSize: 48, marginBottom: 8 },
   title: { fontSize: 22, fontWeight: "800" },
   subtitle: { marginTop: 4, color: "#475569", textAlign: "center" },
-
   pillsRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 14 },
-  pill: {
-    minWidth: 74, paddingVertical: 8, paddingHorizontal: 10,
-    borderRadius: 999, backgroundColor: "#eef2ff", alignItems: "center",
-  },
+  pill: { minWidth: 74, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 999, backgroundColor: "#eef2ff", alignItems: "center" },
   pillLabel: { fontSize: 12, color: "#64748b" },
   pillValue: { fontSize: 16, fontWeight: "800" },
-
   bars: { width: "100%", marginTop: 16, gap: 8 },
   barRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   barLabel: { width: 110, textAlign: "right", color: "#334155" },
   barTrack: { flex: 1, height: 10, borderRadius: 999, backgroundColor: "#e2e8f0", overflow: "hidden" },
   barFill: { height: "100%", borderRadius: 999, backgroundColor: "#4f46e5" },
   barPct: { width: 44, textAlign: "left", color: "#334155" },
-
   footRow: { width: "100%", marginTop: 10, gap: 2 },
   footText: { textAlign: "center", color: "#475569" },
-
   secondary: { color: "#334155", fontWeight: "700" },
 });
