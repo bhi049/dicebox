@@ -8,7 +8,8 @@ import { rollDie, getValidCombos } from "../logic/game";
 import { recordGame, getStatsOrDefault } from "../storage/stats";
 import ResultModal from "../components/ResultModal";
 
-const INITIAL_SKIPS = 3;
+const INITIAL_SKIPS = 5;
+const TAP_COOLDOWN_MS = 350; // ignore very-rapid repeat taps on actions
 
 export default function GameScreen({ navigation }) {
   const t = useTheme();
@@ -17,8 +18,8 @@ export default function GameScreen({ navigation }) {
   const [available, setAvailable] = useState(new Set(numbers));
   const [selected, setSelected] = useState(new Set());
   const [dice, setDice] = useState([null, null]);           // [d1, d2|null]
-  const [phase, setPhase] = useState("idle");               // idle | rolled | gameover | win
-  const [deadRoll, setDeadRoll] = useState(false);          // rolled but no valid moves
+  const [phase, setPhase] = useState("idle");               // idle | rolled | stuck | gameover | win
+  const [deadRoll, setDeadRoll] = useState(false);          // rolled but have skips to use
 
   const [diceMode, setDiceMode] = useState(2);              // 1 or 2 dice; used for Skip re-roll
   const [skipsRemaining, setSkipsRemaining] = useState(INITIAL_SKIPS);
@@ -27,6 +28,9 @@ export default function GameScreen({ navigation }) {
   // Block input while dice visually roll
   const [rollingAnim, setRollingAnim] = useState(false);
   const rollAnimTimer = useRef(null);
+
+  // Debounce very fast taps on Confirm/Skip
+  const lastTapRef = useRef(0);
 
   const recordedRef = useRef(false);
 
@@ -50,32 +54,32 @@ export default function GameScreen({ navigation }) {
     return combos.map((c) => [...c].sort((a, b) => a - b));
   }, [available, target, phase]);
 
-  // Quick helpers based on current selection
+  // Helpers based on current selection
   const selectedArr = useMemo(() => [...selected].sort((a, b) => a - b), [selected]);
   const selectedSum = useMemo(() => selectedArr.reduce((a, b) => a + b, 0), [selectedArr]);
 
   const canConfirm = useMemo(() => {
     if (phase !== "rolled" || rollingAnim || deadRoll || !target) return false;
     if (selectedSum !== target) return false;
-    // Must match one of the valid combos exactly
     return validCombos.some(
       (c) => c.length === selectedArr.length && c.every((v, i) => v === selectedArr[i])
     );
   }, [phase, rollingAnim, deadRoll, target, selectedSum, selectedArr, validCombos]);
 
-  // Detect a dead roll
+  // Detect a dead roll -> either "deadRoll" (skips available) or "stuck" (no skips left).
   useEffect(() => {
     if (phase === "rolled" && target && validCombos.length === 0) {
+      setSelected(new Set());
       if (skipsRemaining > 0) {
         setDeadRoll(true);
       } else {
-        setPhase("gameover");
-        setSelected(new Set());
+        setDeadRoll(false);
+        setPhase("stuck"); // show “no moves left” UI instead of recording loss
       }
     }
   }, [phase, target, validCombos.length, skipsRemaining]);
 
-  // Record stats once + show modal
+  // Record stats once + show modal (win or give up)
   useEffect(() => {
     (async () => {
       if ((phase === "win" || phase === "gameover") && !recordedRef.current) {
@@ -118,11 +122,22 @@ export default function GameScreen({ navigation }) {
     setRollCount((c) => c + 1);
   }
 
+  function guardRapidTap() {
+    const now = Date.now();
+    if (now - lastTapRef.current < TAP_COOLDOWN_MS) return false;
+    lastTapRef.current = now;
+    return true;
+  }
+
+  // Skip returns to idle (no auto re-roll)
   function onSkip() {
+    if (!guardRapidTap()) return;
     if (phase !== "rolled" || skipsRemaining <= 0) return;
     setSelected(new Set());
     setSkipsRemaining((s) => Math.max(0, s - 1));
-    doRoll(diceMode);
+    setDice([null, null]);
+    setDeadRoll(false);
+    setPhase("idle"); // back to choosing Roll 1 or Roll 2
   }
 
   function onToggle(n) {
@@ -130,11 +145,9 @@ export default function GameScreen({ navigation }) {
     const next = new Set(selected);
     next.has(n) ? next.delete(n) : next.add(n);
 
-    // Hard-guard: never allow sum > target
     const sum = Array.from(next).reduce((a, b) => a + b, 0);
     if (target && sum > target) return;
 
-    // Soft-guard: keep selections that are subset of at least one valid combo
     const nextArr = [...next].sort((a, b) => a - b);
     const subsetOK = validCombos.some((combo) => nextArr.every((x) => combo.includes(x)));
     if (!subsetOK) return;
@@ -143,7 +156,9 @@ export default function GameScreen({ navigation }) {
   }
 
   function onConfirm() {
-    if (!canConfirm) return; // extra safety
+    if (!guardRapidTap()) return;
+    if (!canConfirm) return;
+
     const nextAvailable = new Set(available);
     selectedArr.forEach((n) => nextAvailable.delete(n));
     setAvailable(nextAvailable);
@@ -152,6 +167,14 @@ export default function GameScreen({ navigation }) {
 
     if (nextAvailable.size === 0) setPhase("win");
     else setPhase("idle");
+  }
+
+  function onGiveUp() {
+    setPhase("gameover");
+  }
+
+  function onGetMoreSkips() {
+    Alert.alert("Get More Skips", "Coming soon! You'll be able to watch an ad to get +3 skips.");
   }
 
   function resetGameState() {
@@ -166,6 +189,7 @@ export default function GameScreen({ navigation }) {
     setRollingAnim(false);
     recordedRef.current = false;
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
+    lastTapRef.current = 0;
   }
 
   function handlePlayAgain() {
@@ -178,7 +202,7 @@ export default function GameScreen({ navigation }) {
     else if (phase === "rolled") onConfirm();
     else if (phase === "idle") onRoll(diceMode);
     else resetGameState();
-  }, [phase, deadRoll, diceMode, canConfirm, selectedArr]); // deps ok
+  }, [phase, deadRoll, diceMode, canConfirm]);
 
   const primaryLabel =
     phase === "idle" ? `Roll ${diceMode}`
@@ -188,9 +212,13 @@ export default function GameScreen({ navigation }) {
     : (phase === "win" || phase === "gameover") ? "New Game"
     : "Roll";
 
+  // Confirm should be clickable ONLY when canConfirm; disabled Confirm must NEVER block taps to Skip
   const primaryDisabled =
     (phase === "rolled" && deadRoll && skipsRemaining === 0) ||
     (phase === "rolled" && !deadRoll && (rollingAnim || !canConfirm));
+
+  const showSkip = phase === "rolled" && !deadRoll;
+  const skipDisabled = skipsRemaining === 0;
 
   const isIdle = phase === "idle";
 
@@ -225,20 +253,24 @@ export default function GameScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Dice + target */}
+      {/* Dice */}
       <View style={styles.center}>
         <Dice d1={dice[0]} d2={dice[1]} mode={diceMode} />
-        <Text style={styles.caption}>
-          {target ? `Target: ${target}` : "Choose a roll to start"}
-        </Text>
 
-        {phase === "rolled" && deadRoll && (
-          <View style={styles.deadBanner}>
-            <Text style={styles.deadBannerTxt}>
-              No valid combos for {target}. Use a Skip.
+        {/* STATUS SLOT — fixed height, replaces Target when dead roll */}
+        <View style={styles.statusSlot}>
+          {phase === "rolled" && deadRoll ? (
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusBadgeText}>
+                No valid combos for {target}. Use a Skip.
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.caption}>
+              {target ? `Target: ${target}` : "Choose a roll to start"}
             </Text>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Grid */}
         <View style={{ marginTop: 8 }}>
@@ -247,13 +279,15 @@ export default function GameScreen({ navigation }) {
             availableSet={available}
             selectedSet={selected}
             onToggle={onToggle}
-            disabled={phase !== "rolled" || deadRoll || rollingAnim}
+            disabled={phase !== "rolled" || deadRoll || rollingAnim || phase === "stuck"}
           />
         </View>
 
         {/* Helper text */}
         <Text style={styles.helper}>
-          {phase === "rolled" && !deadRoll
+          {phase === "stuck"
+            ? "No valid moves and no skips left."
+            : phase === "rolled" && !deadRoll
             ? (rollingAnim ? "Rolling…" : `${validCombos.length} valid ${validCombos.length === 1 ? "combo" : "combos"}`)
             : phase === "idle"
             ? "Select Roll 1 / Roll 2 to begin."
@@ -261,35 +295,35 @@ export default function GameScreen({ navigation }) {
         </Text>
 
         {/* Actions under the grid */}
-        <View style={styles.actions}>
-          {isIdle ? (
-            <PrimaryButton
-              title={`Roll ${diceMode}`}
-              onPress={() => onRoll(diceMode)}
-              style={styles.actionPrimary}
-            />
-          ) : (
-            <>
-              <PrimaryButton
-                title={primaryLabel}
-                onPress={handlePrimaryPress}
-                disabled={primaryDisabled}
-                style={styles.actionPrimary}
-              />
-              {phase === "rolled" && !deadRoll && (
+        {phase === "stuck" ? (
+          <View style={[styles.actions, { gap: 10 }]}>
+            <PrimaryButton title="Get More Skips" onPress={onGetMoreSkips} style={styles.actionPrimary} />
+            <PrimaryButton title="Give Up" onPress={onGiveUp} style={[styles.actionPrimary, { backgroundColor: "#ef4444" }]} />
+          </View>
+        ) : (
+          <View style={[styles.actions, { gap: 10 }]}>
+            {isIdle ? (
+              <PrimaryButton title={`Roll ${diceMode}`} onPress={() => onRoll(diceMode)} style={styles.actionPrimary} />
+            ) : (
+              <>
                 <PrimaryButton
-                  title={`Skip (${skipsRemaining})`}
-                  onPress={onSkip}
-                  disabled={skipsRemaining === 0 || rollingAnim}
-                  style={[
-                    styles.actionSecondary,
-                    { backgroundColor: (skipsRemaining === 0 || rollingAnim) ? "#cbd5e1" : "#f59e0b" },
-                  ]}
+                  title={primaryLabel}
+                  onPress={handlePrimaryPress}
+                  disabled={primaryDisabled}
+                  style={styles.actionPrimary}
                 />
-              )}
-            </>
-          )}
-        </View>
+                {showSkip && (
+                  <PrimaryButton
+                    title={`Skip (${skipsRemaining})`}
+                    onPress={onSkip}
+                    disabled={skipDisabled}
+                    style={[styles.actionSecondary, { backgroundColor: skipDisabled ? "#cbd5e1" : "#f59e0b" }]}
+                  />
+                )}
+              </>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Result Modal */}
@@ -343,20 +377,29 @@ const styles = StyleSheet.create({
   pillVal: { fontSize: 16, fontWeight: "800", color: "#0f172a" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "flex-start", paddingHorizontal: 12 },
-  caption: { marginTop: 6, color: "#475569" },
 
-  deadBanner: {
-    marginTop: 10,
-    backgroundColor: "#fee2e2",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  // Target / Dead-roll message placeholder with CONSTANT height
+  statusSlot: {
+    height: 32,                 // <- keeps layout from shifting
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 6,
   },
-  deadBannerTxt: { color: "#991b1b", fontWeight: "700" },
+  statusBadge: {
+    backgroundColor: "#fee2e2",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statusBadgeText: { color: "#991b1b", fontWeight: "700" },
+
+  caption: { color: "#475569" },
 
   helper: { marginTop: 10, color: "#64748b", textAlign: "center" },
 
-  actions: { marginTop: 14, alignItems: "center", gap: 10, width: "100%" },
+  actions: { marginTop: 14, alignItems: "center", width: "100%" },
   actionPrimary: { width: "90%" },
   actionSecondary: { width: 180 },
 });

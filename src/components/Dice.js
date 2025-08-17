@@ -1,4 +1,3 @@
-// src/components/Dice.js
 import React, { useEffect, useRef, useState, memo } from "react";
 import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { useTheme } from "../theme/theme";
