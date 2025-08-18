@@ -7,7 +7,8 @@ import { useTheme } from "../theme/theme";
 import { rollDie, getValidCombos } from "../logic/game";
 import { recordGame, getStatsOrDefault } from "../storage/stats";
 import ResultModal from "../components/ResultModal";
-import { saveGameState, loadGameState, clearGameState } from "../storage/gameState"; 
+import { saveGameState, loadGameState, clearGameState } from "../storage/gameState";
+import { haptic } from "../utils/haptics";
 
 const INITIAL_SKIPS = 5;
 const TAP_COOLDOWN_MS = 350; // ignore very-rapid repeat taps on actions
@@ -36,7 +37,7 @@ export default function GameScreen({ navigation }) {
   const recordedRef = useRef(false);
 
   // Persist/resume control
-  const hydratingRef = useRef(true); 
+  const hydratingRef = useRef(true);
 
   // Result modal + latest stats
   const [result, setResult] = useState(null);               // { type, rollsUsed, leftoverSum, perfect }
@@ -108,9 +109,11 @@ export default function GameScreen({ navigation }) {
       setSelected(new Set());
       if (skipsRemaining > 0) {
         setDeadRoll(true);
+        haptic("warning"); // ⬅️ NEW: gentle warning
       } else {
         setDeadRoll(false);
         setPhase("stuck"); // show “no moves left” UI instead of recording loss
+        haptic("error");   // ⬅️ NEW: stronger alert
       }
     }
   }, [phase, target, validCombos.length, skipsRemaining]);
@@ -148,6 +151,7 @@ export default function GameScreen({ navigation }) {
     setPhase("rolled");
     setDeadRoll(false);
     startRollAnimationWindow();
+    haptic("light"); // rolling feedback
   }
 
   function onRoll(mode = 2) {
@@ -174,6 +178,7 @@ export default function GameScreen({ navigation }) {
     setDice([null, null]);
     setDeadRoll(false);
     setPhase("idle"); // back to choosing Roll 1 or Roll 2
+    haptic("select"); 
   }
 
   function onToggle(n) {
@@ -201,11 +206,17 @@ export default function GameScreen({ navigation }) {
     setSelected(new Set());
     setDice([null, null]);
 
-    if (nextAvailable.size === 0) setPhase("win");
-    else setPhase("idle");
+    if (nextAvailable.size === 0) {
+      haptic("success"); // ⬅️ NEW
+      setPhase("win");
+    } else {
+      haptic("medium");  // ⬅️ NEW: satisfying confirm
+      setPhase("idle");
+    }
   }
 
   function onGiveUp() {
+    haptic("error"); // ⬅️ NEW
     setPhase("gameover");
   }
 
@@ -226,7 +237,8 @@ export default function GameScreen({ navigation }) {
     recordedRef.current = false;
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
     lastTapRef.current = 0;
-    clearGameState(); // ⬅️ also clear persisted game when you hard-reset
+    clearGameState(); // also clear persisted game when you hard-reset
+    haptic("select"); // ⬅️ NEW: gentle tick on reset/play again
   }
 
   function handlePlayAgain() {
@@ -268,14 +280,14 @@ export default function GameScreen({ navigation }) {
         <View style={styles.topRow}>
           <View style={styles.segment}>
             <TouchableOpacity
-              onPress={() => isIdle && setDiceMode(1)}
+              onPress={() => { if (isIdle) { setDiceMode(1); haptic("select"); } }} // ⬅️ NEW
               activeOpacity={0.9}
               style={[styles.segBtn, diceMode === 1 && styles.segBtnActive]}
             >
               <Text style={[styles.segTxt, diceMode === 1 && styles.segTxtActive]}>Roll 1</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => isIdle && setDiceMode(2)}
+              onPress={() => { if (isIdle) { setDiceMode(2); haptic("select"); } }} // ⬅️ NEW
               activeOpacity={0.9}
               style={[styles.segBtn, diceMode === 2 && styles.segBtnActive]}
             >
