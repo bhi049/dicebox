@@ -1,3 +1,4 @@
+// src/screens/GameScreen.js
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, Alert, SafeAreaView, TouchableOpacity } from "react-native";
 import PrimaryButton from "../components/PrimaryButton";
@@ -109,11 +110,11 @@ export default function GameScreen({ navigation }) {
       setSelected(new Set());
       if (skipsRemaining > 0) {
         setDeadRoll(true);
-        haptic("warning"); // ⬅️ NEW: gentle warning
+        haptic("warning"); // gentle warning
       } else {
         setDeadRoll(false);
         setPhase("stuck"); // show “no moves left” UI instead of recording loss
-        haptic("error");   // ⬅️ NEW: stronger alert
+        haptic("error");   // stronger alert
       }
     }
   }, [phase, target, validCombos.length, skipsRemaining]);
@@ -178,7 +179,7 @@ export default function GameScreen({ navigation }) {
     setDice([null, null]);
     setDeadRoll(false);
     setPhase("idle"); // back to choosing Roll 1 or Roll 2
-    haptic("select"); 
+    haptic("select");
   }
 
   function onToggle(n) {
@@ -207,16 +208,16 @@ export default function GameScreen({ navigation }) {
     setDice([null, null]);
 
     if (nextAvailable.size === 0) {
-      haptic("success"); // ⬅️ NEW
+      haptic("success");
       setPhase("win");
     } else {
-      haptic("medium");  // ⬅️ NEW: satisfying confirm
+      haptic("medium");
       setPhase("idle");
     }
   }
 
   function onGiveUp() {
-    haptic("error"); // ⬅️ NEW
+    haptic("error");
     setPhase("gameover");
   }
 
@@ -238,7 +239,7 @@ export default function GameScreen({ navigation }) {
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
     lastTapRef.current = 0;
     clearGameState(); // also clear persisted game when you hard-reset
-    haptic("select"); // ⬅️ NEW: gentle tick on reset/play again
+    haptic("select");
   }
 
   function handlePlayAgain() {
@@ -280,14 +281,14 @@ export default function GameScreen({ navigation }) {
         <View style={styles.topRow}>
           <View style={styles.segment}>
             <TouchableOpacity
-              onPress={() => { if (isIdle) { setDiceMode(1); haptic("select"); } }} // ⬅️ NEW
+              onPress={() => { if (isIdle) { setDiceMode(1); haptic("select"); } }}
               activeOpacity={0.9}
               style={[styles.segBtn, diceMode === 1 && styles.segBtnActive]}
             >
               <Text style={[styles.segTxt, diceMode === 1 && styles.segTxtActive]}>Roll 1</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => { if (isIdle) { setDiceMode(2); haptic("select"); } }} // ⬅️ NEW
+              onPress={() => { if (isIdle) { setDiceMode(2); haptic("select"); } }}
               activeOpacity={0.9}
               style={[styles.segBtn, diceMode === 2 && styles.segBtnActive]}
             >
@@ -353,6 +354,20 @@ export default function GameScreen({ navigation }) {
           <View style={[styles.actions, { gap: 10 }]}>
             {isIdle ? (
               <PrimaryButton title={`Roll ${diceMode}`} onPress={() => onRoll(diceMode)} style={styles.actionPrimary} />
+            ) : deadRoll ? (
+              <>
+                <PrimaryButton
+                  title={`No Moves — Skip (${skipsRemaining})`}
+                  onPress={onSkip}
+                  disabled={skipDisabled}
+                  style={styles.actionPrimary}
+                />
+                <PrimaryButton
+                  title="Give Up"
+                  onPress={onGiveUp}
+                  style={[styles.actionPrimary, { backgroundColor: "#ef4444" }]}
+                />
+              </>
             ) : (
               <>
                 <PrimaryButton
