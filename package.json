@@ -6,23 +6,32 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "simulate": "node scripts/simulate.mjs 10000 5"
+  },
+  "jest": {
+    "preset": "jest-expo"
   },
   "dependencies": {
+    "@expo/vector-icons": "^14.1.0",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-navigation/native": "^7.1.17",
     "@react-navigation/native-stack": "^7.3.25",
     "expo": "~53.0.20",
+    "expo-haptics": "~14.1.4",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
     "react-native": "0.79.5",
-    "react-native-screens": "~4.11.1",
     "react-native-safe-area-context": "5.4.0",
-    "@expo/vector-icons": "^14.1.0",
-    "expo-haptics": "~14.1.4"
+    "react-native-screens": "~4.11.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0"
+    "@babel/core": "^7.20.0",
+    "jest": "^29.7.0",
+    "jest-expo": "^53.0.9",
+    "react-test-renderer": "^19.0.0"
   },
   "private": true
 }
