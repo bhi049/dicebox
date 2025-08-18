@@ -1,3 +1,4 @@
+// src/screens/StatsScreen.js
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
@@ -11,6 +12,7 @@ import { useTheme } from "../theme/theme";
 import { getStatsOrDefault, resetStats } from "../storage/stats";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { haptic } from "../utils/haptics";
 
 function Pill({ label, value }) {
   return (
@@ -54,31 +56,40 @@ export default function StatsScreen({ navigation }) {
     }, [])
   );
 
-  const winRate = stats?.gamesPlayed
-    ? (stats.wins / stats.gamesPlayed) * 100
-    : 0;
-  const perfectPct = stats?.gamesPlayed
-    ? (stats.perfectShuts / stats.gamesPlayed) * 100
-    : 0;
-  const avgLeftover =
-    stats?.lossCount ? stats.totalLeftoverSum / stats.lossCount : null;
+  const winRate = stats?.gamesPlayed ? (stats.wins / stats.gamesPlayed) * 100 : 0;
+  const perfectPct = stats?.gamesPlayed ? (stats.perfectShuts / stats.gamesPlayed) * 100 : 0;
+  const avgLeftover = stats?.lossCount ? stats.totalLeftoverSum / stats.lossCount : null;
+
+  const SIDE_W = 88; // keep left & right widths equal so title is centered
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={24} color={t.text} />
-          <Text style={styles.backTxt}>Back</Text>
-        </TouchableOpacity>
+      {/* Header — matches Settings back button + centered title */}
+      <View style={styles.headerRow}>
+        <View style={{ width: SIDE_W, alignItems: "flex-start" }}>
+          <TouchableOpacity
+            onPress={() => { haptic("select"); navigation.goBack(); }}
+            activeOpacity={0.85}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Text style={styles.backTxt}>Back</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={styles.title}>Stats</Text>
-        <TouchableOpacity
-          style={styles.refreshBtn}
-          onPress={load}
-          accessibilityLabel="Refresh stats"
-        >
-          <Ionicons name="refresh" size={20} color={t.text} />
-        </TouchableOpacity>
+
+        <View style={{ width: SIDE_W, alignItems: "flex-end" }}>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={() => { haptic("select"); load(); }}
+            accessibilityLabel="Refresh stats"
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={18} color="#334155" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -105,9 +116,7 @@ export default function StatsScreen({ navigation }) {
           <View style={styles.statRow}>
             <Ionicons name="trophy-outline" size={18} color="#334155" />
             <Text style={styles.statKey}>Fewest Rolls (Win)</Text>
-            <Text style={styles.statVal}>
-              {stats?.bestFewestRolls ?? "-"}
-            </Text>
+            <Text style={styles.statVal}>{stats?.bestFewestRolls ?? "-"}</Text>
           </View>
           <View style={styles.statRow}>
             <Ionicons name="calculator-outline" size={18} color="#334155" />
@@ -154,7 +163,8 @@ export default function StatsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: {
+
+  headerRow: {
     paddingTop: 56,
     paddingHorizontal: 16,
     paddingBottom: 8,
@@ -162,10 +172,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-  backTxt: { fontSize: 16, fontWeight: "600" },
-  title: { fontSize: 24, fontWeight: "800" },
-  refreshBtn: { padding: 8 },
+  backBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#e5e7eb",
+  },
+  backTxt: { fontSize: 16, fontWeight: "700", color: "#334155" },
+  title: { fontSize: 24, fontWeight: "800", textAlign: "center" },
+
+  refreshBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: "#e5e7eb",
+  },
 
   scroll: { paddingHorizontal: 16, paddingTop: 8 },
 
