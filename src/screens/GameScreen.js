@@ -7,6 +7,7 @@ import { useTheme } from "../theme/theme";
 import { rollDie, getValidCombos } from "../logic/game";
 import { recordGame, getStatsOrDefault } from "../storage/stats";
 import ResultModal from "../components/ResultModal";
+import { saveGameState, loadGameState, clearGameState } from "../storage/gameState"; 
 
 const INITIAL_SKIPS = 5;
 const TAP_COOLDOWN_MS = 350; // ignore very-rapid repeat taps on actions
@@ -34,9 +35,44 @@ export default function GameScreen({ navigation }) {
 
   const recordedRef = useRef(false);
 
+  // Persist/resume control
+  const hydratingRef = useRef(true); 
+
   // Result modal + latest stats
   const [result, setResult] = useState(null);               // { type, rollsUsed, leftoverSum, perfect }
   const [latestStats, setLatestStats] = useState(null);
+
+  // ---- Hydrate saved game on mount (if not finished) ----
+  useEffect(() => {
+    (async () => {
+      const saved = await loadGameState();
+      if (saved && saved.phase !== "win" && saved.phase !== "gameover") {
+        setAvailable(saved.available);
+        setSelected(saved.selected);
+        setDice(saved.dice);
+        setPhase(saved.phase);
+        setSkipsRemaining(saved.skipsRemaining);
+        setRollCount(saved.rollCount);
+        setDiceMode(saved.diceMode);
+      }
+      hydratingRef.current = false;
+    })();
+  }, []);
+
+  // ---- Save on any core state change (except while hydrating or after finish) ----
+  useEffect(() => {
+    if (hydratingRef.current) return;
+
+    if (phase === "win" || phase === "gameover") {
+      clearGameState();
+      return;
+    }
+
+    saveGameState({
+      available, selected, dice, phase,
+      skipsRemaining, rollCount, diceMode,
+    });
+  }, [available, selected, dice, phase, skipsRemaining, rollCount, diceMode]);
 
   // Target: one die → that value; two dice → sum; no dice → null
   const target = useMemo(() => {
@@ -190,6 +226,7 @@ export default function GameScreen({ navigation }) {
     recordedRef.current = false;
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
     lastTapRef.current = 0;
+    clearGameState(); // ⬅️ also clear persisted game when you hard-reset
   }
 
   function handlePlayAgain() {
@@ -380,7 +417,7 @@ const styles = StyleSheet.create({
 
   // Target / Dead-roll message placeholder with CONSTANT height
   statusSlot: {
-    height: 32,                 // <- keeps layout from shifting
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 6,
