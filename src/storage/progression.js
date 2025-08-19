@@ -20,10 +20,32 @@ const DEFAULT = Object.freeze({
   },
 });
 
+/* -------------------- Tiny event bus -------------------- */
+const listeners = new Set();
+function emitProgressionChange() {
+  listeners.forEach((fn) => {
+    try { fn(); } catch {}
+  });
+}
+export function onProgressionChange(cb) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+/* ------------------------------------------------------- */
+
 export async function loadProgression() {
   try {
     const raw = await AsyncStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT, cosmetics: { ...DEFAULT.cosmetics, inventory: { ...DEFAULT.cosmetics.inventory }, equipped: { ...DEFAULT.cosmetics.equipped } } };
+    if (!raw) {
+      return {
+        ...DEFAULT,
+        cosmetics: {
+          ...DEFAULT.cosmetics,
+          inventory: { ...DEFAULT.cosmetics.inventory },
+          equipped: { ...DEFAULT.cosmetics.equipped },
+        },
+      };
+    }
     const parsed = JSON.parse(raw);
     const safe = { ...DEFAULT, ...parsed };
     // Ensure shapes exist
@@ -33,12 +55,23 @@ export async function loadProgression() {
     safe.cosmetics.equipped = { ...DEFAULT.cosmetics.equipped, ...(safe.cosmetics.equipped || {}) };
     return safe;
   } catch {
-    return { ...DEFAULT, cosmetics: { ...DEFAULT.cosmetics, inventory: { ...DEFAULT.cosmetics.inventory }, equipped: { ...DEFAULT.cosmetics.equipped } } };
+    return {
+      ...DEFAULT,
+      cosmetics: {
+        ...DEFAULT.cosmetics,
+        inventory: { ...DEFAULT.cosmetics.inventory },
+        equipped: { ...DEFAULT.cosmetics.equipped },
+      },
+    };
   }
 }
 
 export async function saveProgression(p) {
-  try { await AsyncStorage.setItem(KEY, JSON.stringify(p)); } catch {}
+  try {
+    await AsyncStorage.setItem(KEY, JSON.stringify(p));
+  } finally {
+    emitProgressionChange();
+  }
 }
 
 export async function awardAchievements(ids = []) {
@@ -46,10 +79,10 @@ export async function awardAchievements(ids = []) {
   const prog = await loadProgression();
   const now = new Date().toISOString();
   prog.achievements = { ...prog.achievements };
-  ids.forEach(id => {
+  ids.forEach((id) => {
     prog.achievements[id] = { unlocked: true, date: now };
   });
-  await saveProgression(prog);
+  await saveProgression(prog); // emits
   return prog;
 }
 
@@ -61,20 +94,21 @@ export async function unlockCosmetics(items = []) {
   items.forEach(({ type, id }) => {
     if (inv[type]) inv[type][id] = true;
   });
-  await saveProgression(prog);
+  await saveProgression(prog); // emits
   return prog;
 }
 
 export async function equipCosmetic(type, idOrNull) {
   const prog = await loadProgression();
-  if (!prog.cosmetics.equipped.hasOwnProperty(type)) return prog;
+  if (!Object.prototype.hasOwnProperty.call(prog.cosmetics.equipped, type)) return prog;
   // Only allow equipping items the user owns (or clearing with null)
   if (idOrNull && !prog.cosmetics.inventory[type]?.[idOrNull]) return prog;
   prog.cosmetics.equipped[type] = idOrNull ?? null;
-  await saveProgression(prog);
+  await saveProgression(prog); // emits
   return prog;
 }
 
 export async function clearProgression() {
   await AsyncStorage.removeItem(KEY);
+  emitProgressionChange();
 }

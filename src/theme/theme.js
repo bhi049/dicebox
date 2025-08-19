@@ -1,26 +1,28 @@
-import React, { createContext, useContext } from "react";
+// src/theme/theme.js
+import React, { createContext, useContext, useMemo } from "react";
 import { StatusBar } from "react-native";
+import { THEME_PRESETS } from "../cosmetics/palette";
+import { useCosmetics } from "../cosmetics/CosmeticsContext";
 
-const theme = {
-  bg: "#f7f8fb",
-  card: "#ffffff",
-  text: "#0f172a",
-  subtext: "#475569",
-  primary: "#4f46e5",
-  border: "#e5e7eb",
-  tile: "#eef2ff",
-  tileClosed: "#e2e8f0",
-  diceBg: "#ffffff",
-  radius: 14,
-};
-
-const ThemeContext = createContext(theme);
+const ThemeContext = createContext(THEME_PRESETS.default);
 export const useTheme = () => useContext(ThemeContext);
 
 export function ThemeProvider({ children }) {
+  // Read currently equipped app theme from cosmetics context
+  const { equipped } = useCosmetics?.() ?? { equipped: { theme: "default" } };
+  const themeId = equipped?.theme || "default";
+
+  const theme = useMemo(() => {
+    const base = THEME_PRESETS.default;
+    const override = THEME_PRESETS[themeId] || {};
+    return { ...base, ...override };
+  }, [themeId]);
+
+  const barStyle = theme.mode === "dark" ? "light-content" : "dark-content";
+
   return (
     <ThemeContext.Provider value={theme}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={barStyle} />
       {children}
     </ThemeContext.Provider>
   );

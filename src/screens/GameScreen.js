@@ -1,4 +1,3 @@
-// src/screens/GameScreen.js
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, Alert, SafeAreaView, TouchableOpacity } from "react-native";
 import PrimaryButton from "../components/PrimaryButton";
@@ -15,11 +14,16 @@ import { haptic } from "../utils/haptics";
 import { evaluateAchievements, rewardsFor } from "../logic/achievements";
 import { loadProgression, awardAchievements, unlockCosmetics } from "../storage/progression";
 
+// NEW: cosmetics + confetti
+import { useCosmetics } from "../cosmetics/CosmeticsContext";
+import ConfettiOverlay from "../components/ConfettiOverlay";
+
 const INITIAL_SKIPS = 5;
 const TAP_COOLDOWN_MS = 350; // ignore very-rapid repeat taps on actions
 
 export default function GameScreen({ navigation }) {
   const t = useTheme();
+  const { equipped, refresh } = useCosmetics(); // refresh to force instant inventory update after unlocks
   const numbers = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
 
   const [available, setAvailable] = useState(new Set(numbers));
@@ -144,7 +148,7 @@ export default function GameScreen({ navigation }) {
             win: true,
             perfectShut: perfect,
             rollsUsed: rollCount,
-            // ⬇️ NEW metrics
+            // NEW metrics
             skipsUsed,
             threePlusConfirms,
             fourPlusConfirms,
@@ -157,7 +161,7 @@ export default function GameScreen({ navigation }) {
           await recordGame({
             win: false,
             leftoverSum,
-            // ⬇️ NEW metrics
+            // NEW metrics
             skipsUsed,
             threePlusConfirms,
             fourPlusConfirms,
@@ -170,7 +174,7 @@ export default function GameScreen({ navigation }) {
         // pull *updated* stats (includes this game)
         const stats = await getStatsOrDefault();
 
-        // ⬇️ NEW: achievements & cosmetics unlock
+        // Achievements & cosmetics unlock (instant via event bus + explicit refresh)
         try {
           const prog = await loadProgression();
           const owned = new Set(Object.keys(prog.achievements || {}));
@@ -180,6 +184,7 @@ export default function GameScreen({ navigation }) {
             const rewardItems = rewardsFor(newly);
             if (rewardItems.length) {
               await unlockCosmetics(rewardItems);
+              await refresh(); // ensure context pulls the fresh inventory immediately
             }
           }
         } catch {}
@@ -196,6 +201,7 @@ export default function GameScreen({ navigation }) {
     threePlusConfirms,
     fourPlusConfirms,
     maxComboLen,
+    refresh,
   ]);
 
   function startRollAnimationWindow() {
@@ -210,7 +216,7 @@ export default function GameScreen({ navigation }) {
     setPhase("rolled");
     setDeadRoll(false);
     startRollAnimationWindow();
-    haptic("light"); // rolling feedback
+    haptic("light");
   }
 
   function onRoll(mode = 2) {
@@ -228,7 +234,6 @@ export default function GameScreen({ navigation }) {
     return true;
   }
 
-  // Skip returns to idle (no auto re-roll)
   function onSkip() {
     if (!guardRapidTap()) return;
     if (phase !== "rolled" || skipsRemaining <= 0) return;
@@ -236,7 +241,7 @@ export default function GameScreen({ navigation }) {
     setSkipsRemaining((s) => Math.max(0, s - 1));
     setDice([null, null]);
     setDeadRoll(false);
-    setPhase("idle"); // back to choosing Roll 1 or Roll 2
+    setPhase("idle");
     haptic("select");
   }
 
@@ -259,7 +264,7 @@ export default function GameScreen({ navigation }) {
     if (!guardRapidTap()) return;
     if (!canConfirm) return;
 
-    // ⬇️ NEW: update per-confirm metrics (for achievements)
+    // per-confirm metrics
     const len = selectedArr.length;
     if (len >= 3) setThreePlusConfirms((n) => n + 1);
     if (len >= 4) setFourPlusConfirms((n) => n + 1);
@@ -280,10 +285,7 @@ export default function GameScreen({ navigation }) {
     }
   }
 
-  function onGiveUp() {
-    haptic("error");
-    setPhase("gameover");
-  }
+  function onGiveUp() { haptic("error"); setPhase("gameover"); }
 
   function onGetMoreSkips() {
     Alert.alert("Get More Skips", "Coming soon! You'll be able to watch an ad to get +3 skips.");
@@ -299,7 +301,6 @@ export default function GameScreen({ navigation }) {
     setSkipsRemaining(INITIAL_SKIPS);
     setRollCount(0);
     setRollingAnim(false);
-    // ⬇️ reset per-game metrics
     setThreePlusConfirms(0);
     setFourPlusConfirms(0);
     setMaxComboLen(0);
@@ -307,14 +308,11 @@ export default function GameScreen({ navigation }) {
     recordedRef.current = false;
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
     lastTapRef.current = 0;
-    clearGameState(); // also clear persisted game when you hard-reset
+    clearGameState();
     haptic("select");
   }
 
-  function handlePlayAgain() {
-    setResult(null);
-    resetGameState();
-  }
+  function handlePlayAgain() { setResult(null); resetGameState(); }
 
   const handlePrimaryPress = useCallback(() => {
     if (phase === "rolled" && deadRoll) onSkip();
@@ -331,7 +329,6 @@ export default function GameScreen({ navigation }) {
     : (phase === "win" || phase === "gameover") ? "New Game"
     : "Roll";
 
-  // Confirm should be clickable ONLY when canConfirm; disabled Confirm must NEVER block taps to Skip
   const primaryDisabled =
     (phase === "rolled" && deadRoll && skipsRemaining === 0) ||
     (phase === "rolled" && !deadRoll && (rollingAnim || !canConfirm));
@@ -459,6 +456,13 @@ export default function GameScreen({ navigation }) {
         )}
       </View>
 
+      {/* Confetti overlay (uses equipped confetti; instant) */}
+      <ConfettiOverlay
+        effect={equipped?.confetti || "sparkles"}
+        visible={!!result && result.type === "win"}
+        burstKey={result?.rollsUsed}
+      />
+
       {/* Result Modal */}
       <ResultModal
         visible={!!result}
@@ -511,7 +515,6 @@ const styles = StyleSheet.create({
 
   center: { flex: 1, alignItems: "center", justifyContent: "flex-start", paddingHorizontal: 12 },
 
-  // Target / Dead-roll message placeholder with CONSTANT height
   statusSlot: {
     height: 32,
     alignItems: "center",
