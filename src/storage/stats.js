@@ -1,37 +1,61 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const KEY = "dicebox.stats.v1";
+const KEY = "dicebox.v1.stats";
 
-export function defaultStats() {
-  return {
-    gamesPlayed: 0,
-    wins: 0,
-    currentStreak: 0,
-    bestStreak: 0,
-    perfectShuts: 0,
-    bestFewestRolls: null, // lower is better
-    totalLeftoverSum: 0,   // to compute average on losses
-    lossCount: 0,
-  };
-}
+const DEFAULT = Object.freeze({
+  // Core
+  gamesPlayed: 0,
+  wins: 0,
+  lossCount: 0,
+  totalLeftoverSum: 0,
+
+  // Streaks
+  currentStreak: 0,
+  bestStreak: 0,
+
+  // Records
+  bestFewestRolls: null, // lower is better
+
+  // Existing metric you track
+  perfectShuts: 0,
+
+  // NEW meta-progression metrics
+  totalSkipsUsed: 0,
+  totalConfirms: 0,
+  total3PlusConfirms: 0,
+  total4PlusConfirms: 0,
+  most3PlusInGame: 0, // record for a single game
+});
 
 export async function getStatsOrDefault() {
   try {
     const raw = await AsyncStorage.getItem(KEY);
-    if (!raw) return defaultStats();
+    if (!raw) return { ...DEFAULT };
     const parsed = JSON.parse(raw);
-    return { ...defaultStats(), ...parsed };
+    return { ...DEFAULT, ...parsed };
   } catch {
-    return defaultStats();
+    return { ...DEFAULT };
   }
 }
 
-async function save(stats) {
-  await AsyncStorage.setItem(KEY, JSON.stringify(stats));
+export async function resetStats() {
+  await AsyncStorage.removeItem(KEY);
 }
 
-export async function recordGame({ win, perfectShut = false, rollsUsed = null, leftoverSum = null }) {
+export async function recordGame({
+  win,
+  perfectShut = false,
+  rollsUsed = null,
+  leftoverSum = null,
+
+  // NEW optional per-game metrics
+  skipsUsed = 0,
+  threePlusConfirms = 0,
+  fourPlusConfirms = 0,
+  maxComboLen = 0,
+}) {
   const s = await getStatsOrDefault();
+
   s.gamesPlayed += 1;
 
   if (win) {
@@ -39,22 +63,23 @@ export async function recordGame({ win, perfectShut = false, rollsUsed = null, l
     s.currentStreak += 1;
     if (s.currentStreak > s.bestStreak) s.bestStreak = s.currentStreak;
     if (perfectShut) s.perfectShuts += 1;
-    if (typeof rollsUsed === "number") {
+    if (typeof rollsUsed === "number" && rollsUsed > 0) {
       if (s.bestFewestRolls == null || rollsUsed < s.bestFewestRolls) {
         s.bestFewestRolls = rollsUsed;
       }
     }
   } else {
+    s.lossCount += 1;
     s.currentStreak = 0;
-    if (typeof leftoverSum === "number") {
-      s.totalLeftoverSum += leftoverSum;
-      s.lossCount += 1;
-    }
+    if (typeof leftoverSum === "number") s.totalLeftoverSum += leftoverSum;
   }
-  await save(s);
-  return s;
-}
 
-export async function resetStats() {
-  await AsyncStorage.removeItem(KEY);
+  // Accumulate NEW meta-progression metrics
+  if (typeof skipsUsed === "number") s.totalSkipsUsed += Math.max(0, skipsUsed);
+  if (typeof threePlusConfirms === "number") s.total3PlusConfirms += Math.max(0, threePlusConfirms);
+  if (typeof fourPlusConfirms === "number") s.total4PlusConfirms += Math.max(0, fourPlusConfirms);
+  if (typeof maxComboLen === "number") s.most3PlusInGame = Math.max(s.most3PlusInGame, maxComboLen >= 3 ? maxComboLen : s.most3PlusInGame);
+
+  await AsyncStorage.setItem(KEY, JSON.stringify(s));
+  return s;
 }

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, memo } from "react";
 import { View, Text, StyleSheet, Animated, Easing } from "react-native";
 import { useTheme } from "../theme/theme";
+import { useCosmetics } from "../cosmetics/CosmeticsContext";
+import { DICE_SKINS } from "../cosmetics/palette";
 
 // ——— Size ———
 const DIE = 68;
@@ -15,8 +17,7 @@ const ROLL_MS = 500;
 const STAGGER_MS = 120;
 const SPLIT_MS = 220;
 
-const Die = memo(function Die({ value, trigger, delayMs = 0, extraTransform = [], extraScale }) {
-  const t = useTheme();
+const Die = memo(function Die({ value, trigger, delayMs = 0, extraTransform = [], extraScale, colors, radius, borderWidth = 1.5 }) {
   const rot = useRef(new Animated.Value(0)).current;
   const lift = useRef(new Animated.Value(0)).current;
 
@@ -51,16 +52,34 @@ const Die = memo(function Die({ value, trigger, delayMs = 0, extraTransform = []
     <Animated.View
       style={[
         styles.die,
-        { backgroundColor: t.diceBg, borderRadius: t.radius, borderColor: t.border, transform: transforms },
+        {
+          backgroundColor: colors.bg,
+          borderRadius: radius,
+          borderColor: colors.border,
+          borderWidth,
+          transform: transforms,
+        },
+        // keep your perf flags
         { renderToHardwareTextureAndroid: true, shouldRasterizeIOS: true },
       ]}
     >
-      <Text style={styles.dieText}>{value ?? "-"}</Text>
+      <Text style={[styles.dieText, { color: colors.text }]}>{value ?? "-"}</Text>
     </Animated.View>
   );
 });
 
 export default memo(function Dice({ d1, d2, mode = 2 }) {
+  const t = useTheme();
+  const { equipped } = useCosmetics();
+
+  // Resolve skin with safe fallbacks to theme
+  const skin = DICE_SKINS[equipped?.diceSkin || "default"] || DICE_SKINS.default || {};
+  const dieColors = {
+    bg: skin.bg ?? t.diceBg ?? "#ffffff",
+    border: skin.border ?? t.border ?? "#e5e7eb",
+    text: skin.text ?? t.text ?? "#0f172a",
+  };
+
   // trigger roll anim on any value change
   const [trigger, setTrigger] = useState(0);
   const prev = useRef([null, null]);
@@ -90,7 +109,14 @@ export default memo(function Dice({ d1, d2, mode = 2 }) {
 
   return (
     <View style={styles.stage}>
-      <Die value={d1} trigger={trigger} extraScale={die1Scale} extraTransform={[{ translateX: die1Shift }]} />
+      <Die
+        value={d1}
+        trigger={trigger}
+        extraScale={die1Scale}
+        extraTransform={[{ translateX: die1Shift }]}
+        colors={dieColors}
+        radius={t.radius}
+      />
       <Animated.View
         pointerEvents="none"
         style={{
@@ -100,7 +126,13 @@ export default memo(function Dice({ d1, d2, mode = 2 }) {
           transform: [{ translateX: die2Shift }],
         }}
       >
-        <Die value={d2} trigger={trigger} delayMs={delay2} />
+        <Die
+          value={d2}
+          trigger={trigger}
+          delayMs={delay2}
+          colors={dieColors}
+          radius={t.radius}
+        />
       </Animated.View>
     </View>
   );
@@ -112,7 +144,6 @@ const styles = StyleSheet.create({
     height: STAGE_H,
     alignItems: "center",
     justifyContent: "center",
-    // IMPORTANT: allow rotated corners to render outside bounds
     overflow: "visible",
     marginVertical: 8,
   },
@@ -121,7 +152,6 @@ const styles = StyleSheet.create({
     height: DIE,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
   },
   dieText: { fontSize: 28, fontWeight: "800" },
 });

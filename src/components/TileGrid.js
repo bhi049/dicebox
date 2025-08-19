@@ -1,17 +1,19 @@
 import React, { useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useTheme } from "../theme/theme";
+import { useCosmetics } from "../cosmetics/CosmeticsContext";
+import { TILE_THEMES } from "../cosmetics/palette";
 
 const COLS = 6;
 const GAP = 10;
 
 export default function TileGrid({ numbers, availableSet, selectedSet, onToggle, disabled }) {
   const t = useTheme();
-  const [gridW, setGridW] = useState(0);
+  const { equipped } = useCosmetics();
+  const skin = TILE_THEMES[equipped?.tileTheme || "default"] || TILE_THEMES.default || {};
 
-  // Compute square tile size so 6 tiles + 5 gaps always fit the row
-  const tileSize =
-    gridW > 0 ? Math.floor((gridW - GAP * (COLS - 1)) / COLS) : 58; // fallback to your old 58
+  const [gridW, setGridW] = useState(0);
+  const tileSize = gridW > 0 ? Math.floor((gridW - GAP * (COLS - 1)) / COLS) : 58;
 
   return (
     <View
@@ -22,7 +24,14 @@ export default function TileGrid({ numbers, availableSet, selectedSet, onToggle,
         const available = availableSet.has(n);
         const selected = selectedSet.has(n);
 
-        // margins to emulate "gap" reliably and keep 6 per row
+        const bg = available
+          ? (skin.openBg ?? t.tile)
+          : (skin.closedBg ?? t.tileClosed);
+
+        const baseBorder = available ? "#d1d5db" : (t.border ?? "#e5e7eb");
+        const borderColor = skin.border ?? baseBorder;
+        const numColor = skin.text ?? "#0f172a";
+
         const isEndOfRow = (idx % COLS) === COLS - 1;
         const mr = isEndOfRow ? 0 : GAP;
         const mb = idx < numbers.length - COLS ? GAP : 0;
@@ -38,8 +47,8 @@ export default function TileGrid({ numbers, availableSet, selectedSet, onToggle,
                 marginRight: mr,
                 marginBottom: mb,
                 borderRadius: t.radius,
-                backgroundColor: available ? t.tile : t.tileClosed,
-                borderColor: available ? "#d1d5db" : t.border,
+                backgroundColor: bg,
+                borderColor,
                 opacity: available ? 1 : 0.55,
               },
               selected && { borderColor: t.primary, borderWidth: 2 },
@@ -48,7 +57,7 @@ export default function TileGrid({ numbers, availableSet, selectedSet, onToggle,
             disabled={!available || disabled}
             activeOpacity={0.9}
           >
-            <Text style={styles.num}>{n}</Text>
+            <Text style={[styles.num, { color: numColor }]}>{n}</Text>
           </TouchableOpacity>
         );
       })}

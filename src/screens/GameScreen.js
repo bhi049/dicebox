@@ -11,6 +11,10 @@ import ResultModal from "../components/ResultModal";
 import { saveGameState, loadGameState, clearGameState } from "../storage/gameState";
 import { haptic } from "../utils/haptics";
 
+// achievements + cosmetics progression
+import { evaluateAchievements, rewardsFor } from "../logic/achievements";
+import { loadProgression, awardAchievements, unlockCosmetics } from "../storage/progression";
+
 const INITIAL_SKIPS = 5;
 const TAP_COOLDOWN_MS = 350; // ignore very-rapid repeat taps on actions
 
@@ -27,6 +31,11 @@ export default function GameScreen({ navigation }) {
   const [diceMode, setDiceMode] = useState(2);              // 1 or 2 dice; used for Skip re-roll
   const [skipsRemaining, setSkipsRemaining] = useState(INITIAL_SKIPS);
   const [rollCount, setRollCount] = useState(0);            // accepted rolls (skips don't count)
+
+  // ⬇️ NEW: per-game skill metrics (for achievements)
+  const [threePlusConfirms, setThreePlusConfirms] = useState(0);
+  const [fourPlusConfirms, setFourPlusConfirms] = useState(0);
+  const [maxComboLen, setMaxComboLen] = useState(0);
 
   // Block input while dice visually roll
   const [rollingAnim, setRollingAnim] = useState(false);
@@ -119,26 +128,75 @@ export default function GameScreen({ navigation }) {
     }
   }, [phase, target, validCombos.length, skipsRemaining]);
 
-  // Record stats once + show modal (win or give up)
+  // Record stats once + show modal (+ evaluate achievements)
   useEffect(() => {
     (async () => {
       if ((phase === "win" || phase === "gameover") && !recordedRef.current) {
         recordedRef.current = true;
 
+        // derive per-game skips used
+        const skipsUsed = Math.max(0, INITIAL_SKIPS - skipsRemaining);
+
+        let gameSummary;
         if (phase === "win") {
           const perfect = skipsRemaining === INITIAL_SKIPS; // only perfect if NO skips used
-          await recordGame({ win: true, perfectShut: perfect, rollsUsed: rollCount });
+          await recordGame({
+            win: true,
+            perfectShut: perfect,
+            rollsUsed: rollCount,
+            // ⬇️ NEW metrics
+            skipsUsed,
+            threePlusConfirms,
+            fourPlusConfirms,
+            maxComboLen,
+          });
           setResult({ type: "win", rollsUsed: rollCount, leftoverSum: 0, perfect });
+          gameSummary = { win: true, perfectShut: perfect, leftoverSum: 0, rollsUsed: rollCount };
         } else {
           const leftoverSum = Array.from(available).reduce((a, b) => a + b, 0);
-          await recordGame({ win: false, leftoverSum });
+          await recordGame({
+            win: false,
+            leftoverSum,
+            // ⬇️ NEW metrics
+            skipsUsed,
+            threePlusConfirms,
+            fourPlusConfirms,
+            maxComboLen,
+          });
           setResult({ type: "loss", rollsUsed: rollCount, leftoverSum, perfect: false });
+          gameSummary = { win: false, perfectShut: false, leftoverSum, rollsUsed: rollCount };
         }
+
+        // pull *updated* stats (includes this game)
+        const stats = await getStatsOrDefault();
+
+        // ⬇️ NEW: achievements & cosmetics unlock
+        try {
+          const prog = await loadProgression();
+          const owned = new Set(Object.keys(prog.achievements || {}));
+          const newly = evaluateAchievements({ result: gameSummary, stats }, owned);
+          if (newly.length) {
+            await awardAchievements(newly);
+            const rewardItems = rewardsFor(newly);
+            if (rewardItems.length) {
+              await unlockCosmetics(rewardItems);
+            }
+          }
+        } catch {}
+
         const s = await getStatsOrDefault();
         setLatestStats(s);
       }
     })();
-  }, [phase, rollCount, available, skipsRemaining]);
+  }, [
+    phase,
+    rollCount,
+    available,
+    skipsRemaining,
+    threePlusConfirms,
+    fourPlusConfirms,
+    maxComboLen,
+  ]);
 
   function startRollAnimationWindow() {
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
@@ -201,6 +259,12 @@ export default function GameScreen({ navigation }) {
     if (!guardRapidTap()) return;
     if (!canConfirm) return;
 
+    // ⬇️ NEW: update per-confirm metrics (for achievements)
+    const len = selectedArr.length;
+    if (len >= 3) setThreePlusConfirms((n) => n + 1);
+    if (len >= 4) setFourPlusConfirms((n) => n + 1);
+    setMaxComboLen((m) => Math.max(m, len));
+
     const nextAvailable = new Set(available);
     selectedArr.forEach((n) => nextAvailable.delete(n));
     setAvailable(nextAvailable);
@@ -235,6 +299,11 @@ export default function GameScreen({ navigation }) {
     setSkipsRemaining(INITIAL_SKIPS);
     setRollCount(0);
     setRollingAnim(false);
+    // ⬇️ reset per-game metrics
+    setThreePlusConfirms(0);
+    setFourPlusConfirms(0);
+    setMaxComboLen(0);
+
     recordedRef.current = false;
     rollAnimTimer.current && clearTimeout(rollAnimTimer.current);
     lastTapRef.current = 0;
